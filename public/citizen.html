@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CivicPulse · Report an issue</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><text y='19' font-size='19'>📡</text></svg>">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<link rel="stylesheet" href="/css/app.css">
+</head>
+<body>
+<div class="shell">
+  <aside class="sidebar"></aside>
+
+  <main class="main">
+    <header class="topbar">
+      <div class="grow">
+        <h1 data-title>Report an issue</h1>
+        <div class="muted small" data-subtitle></div>
+      </div>
+      <div class="row">
+        <span class="badge accent" id="trust-badge">Trust —</span>
+        <button class="btn sm" id="refresh-btn">Refresh</button>
+      </div>
+    </header>
+
+    <!-- ============================================================ REPORT -->
+    <section data-view="report">
+      <div class="grid split">
+        <div>
+          <div class="card">
+            <div class="card-head">
+              <h2>1 · Capture the issue</h2>
+              <span class="badge" id="photo-count">0 / 4 photos</span>
+            </div>
+            <p class="muted small" style="margin-top:-6px">
+              Take <b>2 to 4 photos from different angles</b>. More angles means a more confident AI
+              classification — and the photos become the "before" evidence the department must match when it closes the job.
+            </p>
+
+            <div class="dropzone" id="dropzone">
+              <div class="big">Tap to take a photo or choose files</div>
+              <div class="muted small">JPEG or PNG · up to 4 photos · GPS inside the photo is read automatically</div>
+              <div class="row" style="justify-content:center;margin-top:12px">
+                <button class="btn sm" type="button" id="camera-btn">Open camera</button>
+                <button class="btn sm" type="button" id="file-btn">Choose files</button>
+              </div>
+            </div>
+            <input type="file" id="camera-input" accept="image/*" capture="environment" class="hidden" multiple>
+            <input type="file" id="file-input" accept="image/jpeg,image/png" class="hidden" multiple>
+            <div class="thumbs" id="thumbs"></div>
+          </div>
+
+          <div class="card">
+            <div class="card-head"><h2>2 · Location</h2><span class="badge" id="loc-badge">Locating…</span></div>
+            <div id="pick-map" class="map" style="height:240px"></div>
+            <div class="row wrap small muted" style="margin-top:10px">
+              <span class="mono" id="loc-text">—</span>
+              <span class="grow"></span>
+              <button class="btn sm" id="locate-btn" type="button">Use my GPS</button>
+            </div>
+            <p class="small faint" style="margin-top:8px">
+              Drag the pin if the auto-detected point is off. If your photo carries its own GPS tag, that wins — it is harder to fake.
+            </p>
+          </div>
+
+          <div class="card">
+            <div class="card-head"><h2>3 · Describe it <span class="faint small">(optional)</span></h2></div>
+            <label class="field">
+              <textarea id="description" placeholder="e.g. Deep pothole in the middle of the road near the school gate, two bikes have already fallen here this week."></textarea>
+            </label>
+            <label class="field"><span>Nearest landmark</span><input id="landmark" placeholder="Opposite Vidya Mandir School, 5th Cross"></label>
+            <button class="btn primary block" id="submit-btn" style="margin-top:4px">Analyse with AI &amp; send to department</button>
+            <div class="small faint center" style="margin-top:9px">Your report is routed automatically — you never have to pick a department.</div>
+          </div>
+        </div>
+
+        <div>
+          <div class="card ai-panel" id="ai-panel">
+            <div class="tiny">CivicPulse AI · live</div>
+            <div class="empty" id="ai-empty">
+              <div class="big">◍</div>
+              <div>The AI verdict appears here the moment you submit.</div>
+              <div class="small" style="margin-top:6px">Vision model + on-board CivicVision + text NLP, fused into one routing decision.</div>
+            </div>
+            <div id="ai-result" class="hidden"></div>
+          </div>
+
+          <div class="card">
+            <div class="card-head"><h3>Nearby open issues</h3><span class="badge" id="nearby-count">0</span></div>
+            <div class="issue-list" id="nearby-list"></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- =========================================================== REPORTS -->
+    <section data-view="reports" class="hidden">
+      <div class="grid cols-4" style="margin-bottom:16px">
+        <div class="card stat"><div class="value" id="m-total">0</div><div class="label">Reports filed</div></div>
+        <div class="card stat accent"><div class="value" id="m-open">0</div><div class="label">In progress</div></div>
+        <div class="card stat ok"><div class="value" id="m-closed">0</div><div class="label">Resolved</div></div>
+        <div class="card stat warn"><div class="value" id="m-await">0</div><div class="label">Awaiting your check</div></div>
+      </div>
+      <div class="card">
+        <div class="card-head"><h2>My reports</h2><span class="small muted">Updates arrive live — no refresh needed</span></div>
+        <div class="issue-list" id="my-list"></div>
+      </div>
+    </section>
+
+    <!-- =============================================================== MAP -->
+    <section data-view="map" class="hidden">
+      <div class="card">
+        <div class="card-head">
+          <h2>City issue map</h2>
+          <div class="row small muted">
+            <span class="sev sev-2"><i></i>Low</span><span class="sev sev-3"><i></i>Moderate</span>
+            <span class="sev sev-4"><i></i>High</span><span class="sev sev-5"><i></i>Critical</span>
+          </div>
+        </div>
+        <div id="city-map" class="map" style="height:560px"></div>
+      </div>
+    </section>
+  </main>
+</div>
+
+<div id="modal-root"></div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="/socket.io/socket.io.js"></script>
+<script type="module" src="/js/citizen.js"></script>
+</body>
+</html>

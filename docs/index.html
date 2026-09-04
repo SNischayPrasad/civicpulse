@@ -1,0 +1,286 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CivicPulse · AI Civic Issue Intelligence</title>
+<meta name="description" content="CivicPulse - AI powered crowdsourced civic issue intelligence and resolution platform. SIH25031, Team Infinity Force.">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><text y='19' font-size='19'>📡</text></svg>">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<link rel="stylesheet" href="css/app.css">
+<style>
+  .demo-bar {
+    background: linear-gradient(90deg, rgba(46,230,197,.14), rgba(56,189,248,.08));
+    border-bottom: 1px solid var(--border-bright);
+    padding: 7px 16px; font-size: 12.5px; display: flex; gap: 12px;
+    align-items: center; flex-wrap: wrap; position: sticky; top: 0; z-index: 500;
+  }
+  .demo-bar b { color: var(--accent); }
+</style>
+</head>
+<body>
+
+<div class="demo-bar">
+  <b>Live demo</b>
+  <span class="muted">Runs entirely in your browser — the AI, routing, SLA clock and evidence checks all execute locally on GitHub Pages.</span>
+  <span class="grow"></span>
+  <a href="https://github.com/SNischayPrasad/civicpulse" target="_blank" rel="noopener">Source &amp; full-stack build ↗</a>
+  <button class="btn sm ghost" id="reset-demo">Reset demo data</button>
+</div>
+
+<!-- ================================================================= AUTH -->
+<div id="auth-screen">
+  <div class="auth-wrap" style="min-height:calc(100vh - 34px)">
+    <section class="auth-hero">
+      <div class="brand">
+        <div class="brand-mark">
+          <svg viewBox="0 0 24 24" fill="none" stroke="#04231f" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12h4l3-8 4 16 3-8h6"/></svg>
+        </div>
+        <div><div class="brand-name">CivicPulse</div><div class="brand-sub">Team Infinity Force · SIH25031</div></div>
+      </div>
+
+      <div>
+        <div class="tiny">AI-Powered Crowdsourced Civic Issue Intelligence</div>
+        <h1 class="hero-title">From <em>"I reported it"</em><br>to <em>"We resolved it."</em></h1>
+        <p class="muted" style="max-width:52ch">
+          Photograph a civic problem from a few angles. CivicPulse reads the image with computer
+          vision, pins the exact location from the photo's own GPS, and pushes a live alert to the
+          department that owns it — with an SLA clock, contractor liability lookup and photographic
+          proof of closure.
+        </p>
+        <div class="pipeline">
+          <span class="on">Report</span><span class="on">Understand</span><span class="on">Unify</span>
+          <span class="on">Route</span><span class="on">Resolve</span><span class="on">Verify</span>
+        </div>
+        <div class="grid cols-3" style="margin-top:30px">
+          <div class="card stat accent" style="padding:13px"><div class="value" id="hero-issues">0</div><div class="label">Issues tracked</div></div>
+          <div class="card stat" style="padding:13px"><div class="value">12</div><div class="label">AI categories</div></div>
+          <div class="card stat ok" style="padding:13px"><div class="value">8</div><div class="label">Departments wired</div></div>
+        </div>
+      </div>
+
+      <div class="small faint">Open data: OpenStreetMap · Nominatim · Overpass · Open311 model · UN SDG 11</div>
+    </section>
+
+    <section class="auth-form-side">
+      <div class="auth-card">
+        <div class="card">
+          <div class="tabs">
+            <button class="active" data-tab="login">Sign in</button>
+            <button data-tab="register">Create citizen account</button>
+          </div>
+          <div id="auth-error" class="err hidden"></div>
+
+          <form id="login-form">
+            <label class="field"><span>Email</span><input type="email" name="email" placeholder="you@example.com" required></label>
+            <label class="field"><span>Password</span><input type="password" name="password" placeholder="••••••••" required></label>
+            <button class="btn primary block" type="submit">Sign in to CivicPulse</button>
+          </form>
+
+          <form id="register-form" class="hidden">
+            <label class="field"><span>Full name</span><input name="name" placeholder="Ananya Rao" required></label>
+            <label class="field"><span>Email</span><input type="email" name="email" placeholder="you@example.com" required></label>
+            <label class="field"><span>Password</span><input type="password" name="password" placeholder="At least 6 characters" required></label>
+            <button class="btn primary block" type="submit">Create account &amp; start reporting</button>
+          </form>
+        </div>
+
+        <div class="card" style="margin-top:14px">
+          <div class="tiny" style="margin-bottom:9px">Demo accounts — click to sign in</div>
+          <div class="col" style="gap:6px" id="demo-list"></div>
+        </div>
+      </div>
+    </section>
+  </div>
+</div>
+
+<!-- ================================================================== APP -->
+<div id="app-screen" class="hidden">
+  <div class="shell">
+    <aside class="sidebar"></aside>
+    <main class="main">
+      <header class="topbar">
+        <div class="grow">
+          <h1 data-title>CivicPulse</h1>
+          <div class="muted small" data-subtitle></div>
+        </div>
+        <div class="row">
+          <span class="live-dot"></span><span class="small muted" data-live-text>Live</span>
+          <span class="badge accent" id="trust-badge"></span>
+        </div>
+      </header>
+
+      <!-- ---------------------------------------------------------- REPORT -->
+      <section data-view="report" class="hidden">
+        <div class="grid split">
+          <div>
+            <div class="card">
+              <div class="card-head"><h2>1 · Capture the issue</h2><span class="badge" id="photo-count">0 / 4 photos</span></div>
+              <p class="muted small" style="margin-top:-6px">
+                Take <b>2 to 4 photos from different angles</b>. More angles means a more confident AI
+                classification — and these photos become the "before" evidence the department must match when it closes the job.
+              </p>
+              <div class="dropzone" id="dropzone">
+                <div class="big">Tap to take a photo or choose files</div>
+                <div class="muted small">JPEG or PNG · up to 4 photos · GPS inside the photo is read automatically</div>
+                <div class="row" style="justify-content:center;margin-top:12px">
+                  <button class="btn sm" type="button" id="camera-btn">Open camera</button>
+                  <button class="btn sm" type="button" id="file-btn">Choose files</button>
+                </div>
+              </div>
+              <input type="file" id="camera-input" accept="image/*" capture="environment" class="hidden" multiple>
+              <input type="file" id="file-input" accept="image/jpeg,image/png" class="hidden" multiple>
+              <div class="thumbs" id="thumbs"></div>
+            </div>
+
+            <div class="card">
+              <div class="card-head"><h2>2 · Location</h2><span class="badge" id="loc-badge">Locating…</span></div>
+              <div id="pick-map" class="map" style="height:240px"></div>
+              <div class="row wrap small muted" style="margin-top:10px">
+                <span class="mono" id="loc-text">—</span><span class="grow"></span>
+                <button class="btn sm" id="locate-btn" type="button">Use my GPS</button>
+              </div>
+              <p class="small faint" style="margin-top:8px">Drag the pin if the auto-detected point is off. A photo carrying its own GPS tag always wins — it is harder to fake.</p>
+            </div>
+
+            <div class="card">
+              <div class="card-head"><h2>3 · Describe it <span class="faint small">(optional)</span></h2></div>
+              <label class="field"><textarea id="description" placeholder="e.g. Deep pothole in the middle of the road near the school gate, two bikes have already fallen here this week."></textarea></label>
+              <label class="field"><span>Nearest landmark</span><input id="landmark" placeholder="Opposite Vidya Mandir School, 5th Cross"></label>
+              <button class="btn primary block" id="submit-btn">Analyse with AI &amp; send to department</button>
+              <div class="small faint center" style="margin-top:9px">Your report is routed automatically — you never have to pick a department.</div>
+            </div>
+          </div>
+
+          <div>
+            <div class="card ai-panel">
+              <div class="tiny">CivicPulse AI · live</div>
+              <div class="empty" id="ai-empty">
+                <div class="big">◍</div>
+                <div>The AI verdict appears here the moment you submit.</div>
+                <div class="small" style="margin-top:6px">Canvas computer vision + text NLP, fused into one routing decision.</div>
+              </div>
+              <div id="ai-result" class="hidden"></div>
+            </div>
+            <div class="card">
+              <div class="card-head"><h3>Nearby open issues</h3><span class="badge" id="nearby-count">0</span></div>
+              <div class="issue-list" id="nearby-list"></div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- --------------------------------------------------------- REPORTS -->
+      <section data-view="reports" class="hidden">
+        <div class="grid cols-4" style="margin-bottom:16px">
+          <div class="card stat"><div class="value" id="m-total">0</div><div class="label">Reports filed</div></div>
+          <div class="card stat accent"><div class="value" id="m-open">0</div><div class="label">In progress</div></div>
+          <div class="card stat ok"><div class="value" id="m-closed">0</div><div class="label">Resolved</div></div>
+          <div class="card stat warn"><div class="value" id="m-await">0</div><div class="label">Awaiting your check</div></div>
+        </div>
+        <div class="card">
+          <div class="card-head"><h2>My reports</h2><span class="small muted">Updates arrive live across browser tabs</span></div>
+          <div class="issue-list" id="my-list"></div>
+        </div>
+      </section>
+
+      <!-- ----------------------------------------------------------- QUEUE -->
+      <section data-view="queue" class="hidden">
+        <div class="grid cols-4" style="margin-bottom:16px">
+          <div class="card stat accent"><div class="value" id="s-open">0</div><div class="label">Open in my department</div></div>
+          <div class="card stat danger"><div class="value" id="s-overdue">0</div><div class="label">SLA breached</div></div>
+          <div class="card stat"><div class="value" id="s-mine">0</div><div class="label">Assigned to me</div></div>
+          <div class="card stat ok"><div class="value" id="s-sla">—</div><div class="label">SLA compliance</div></div>
+        </div>
+        <div class="grid split">
+          <div class="card">
+            <div class="card-head"><h2>Work queue</h2>
+              <select id="status-filter" style="width:auto">
+                <option value="">All open</option><option value="ROUTED">Newly routed</option>
+                <option value="ACKNOWLEDGED">Acknowledged</option><option value="ASSIGNED">Assigned</option>
+                <option value="IN_PROGRESS">In progress</option><option value="ESCALATED">Escalated</option>
+                <option value="RESOLVED">Resolved</option><option value="CLOSED">Closed</option>
+              </select>
+            </div>
+            <div class="issue-list" id="queue-list"></div>
+          </div>
+          <div>
+            <div class="card">
+              <div class="card-head"><h3>Live alert feed</h3><span class="badge accent" id="alert-count">0</span></div>
+              <div class="col" style="gap:8px;max-height:430px;overflow-y:auto" id="alert-feed"></div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ------------------------------------------------------------- MAP -->
+      <section data-view="map" class="hidden">
+        <div class="card">
+          <div class="card-head"><h2>City issue map</h2>
+            <div class="row small muted">
+              <span class="sev sev-2"><i></i>Low</span><span class="sev sev-3"><i></i>Moderate</span>
+              <span class="sev sev-4"><i></i>High</span><span class="sev sev-5"><i></i>Critical</span>
+            </div>
+          </div>
+          <div id="city-map" class="map" style="height:540px"></div>
+        </div>
+      </section>
+
+      <!-- -------------------------------------------------------- ANALYTICS -->
+      <section data-view="analytics" class="hidden">
+        <div class="grid cols-4">
+          <div class="card stat accent"><div class="value" id="k-issues">0</div><div class="label">Total issues</div><div class="delta" id="k-citizens"></div></div>
+          <div class="card stat warn"><div class="value" id="k-open">0</div><div class="label">Open now</div><div class="delta" id="k-overdue"></div></div>
+          <div class="card stat ok"><div class="value" id="k-sla">—</div><div class="label">SLA compliance</div><div class="delta" id="k-avg"></div></div>
+          <div class="card stat"><div class="value" id="k-conf">—</div><div class="label">Avg AI confidence</div><div class="delta">CivicVision on-board</div></div>
+        </div>
+        <div class="grid split" style="margin-top:16px">
+          <div class="card">
+            <div class="card-head"><h2>Reported vs closed · 14 days</h2><span class="badge" id="trend-total"></span></div>
+            <div class="sparkline" id="trend"></div>
+            <div class="card-head" style="margin-top:24px"><h3>Issue mix by category</h3></div>
+            <div id="cat-bars"></div>
+          </div>
+          <div>
+            <div class="card ai-panel"><div class="tiny">AI decision layer</div><div id="ai-status"></div></div>
+            <div class="card"><div class="card-head"><h3>Department load</h3></div><div id="dept-table"></div></div>
+            <div class="card"><div class="card-head"><h3>Recurring hotspots</h3><span class="badge warn" id="hot-count">0</span></div>
+              <div class="col" id="hotspot-list" style="gap:9px"></div></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ------------------------------------------------------- CONTRACTORS -->
+      <section data-view="contractors" class="hidden">
+        <div class="card">
+          <div class="card-head"><h2>Contractor accountability</h2>
+            <input id="contractor-search" placeholder="Search name, ward or work type" style="width:280px"></div>
+          <div id="contractor-table"></div>
+        </div>
+      </section>
+
+      <!-- ------------------------------------------------------------ REVIEW -->
+      <section data-view="review" class="hidden">
+        <div class="card">
+          <div class="card-head"><h2>Human review queue</h2><span class="badge warn" id="review-count">0</span></div>
+          <p class="small muted" style="margin-top:-8px">Issues where AI confidence fell below the threshold. A supervisor confirms or overrides the classification.</p>
+          <div class="issue-list" id="review-list"></div>
+        </div>
+        <div class="card">
+          <div class="card-head"><h2>All issues</h2><input id="search" placeholder="Search code, category, ward" style="width:280px"></div>
+          <div class="issue-list" id="all-list"></div>
+        </div>
+      </section>
+    </main>
+  </div>
+</div>
+
+<div id="modal-root"></div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script type="module" src="js/app.js"></script>
+</body>
+</html>

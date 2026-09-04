@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CivicPulse · Sign in</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><text y='19' font-size='19'>📡</text></svg>">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/css/app.css">
+</head>
+<body>
+<div class="auth-wrap">
+
+  <section class="auth-hero">
+    <div class="brand">
+      <div class="brand-mark">
+        <svg viewBox="0 0 24 24" fill="none" stroke="#04231f" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M2 12h4l3-8 4 16 3-8h6"/>
+        </svg>
+      </div>
+      <div>
+        <div class="brand-name">CivicPulse</div>
+        <div class="brand-sub">Team Infinity Force · SIH25031</div>
+      </div>
+    </div>
+
+    <div>
+      <div class="tiny">AI-Powered Crowdsourced Civic Issue Intelligence</div>
+      <h1 class="hero-title">From <em>"I reported it"</em><br>to <em>"We resolved it."</em></h1>
+      <p class="muted" style="max-width:52ch">
+        Photograph a civic problem from a few angles. CivicPulse reads the image with computer
+        vision, pins the exact location from the photo's own GPS, and pushes a live alert to the
+        department that owns it — with an SLA clock, contractor liability lookup and
+        photographic proof of closure.
+      </p>
+      <div class="pipeline">
+        <span class="on">Report</span><span class="on">Understand</span><span class="on">Unify</span>
+        <span class="on">Route</span><span class="on">Resolve</span><span class="on">Verify</span>
+      </div>
+
+      <div class="grid cols-3" style="margin-top:30px">
+        <div class="card stat accent" style="padding:13px">
+          <div class="value" id="stat-issues">—</div><div class="label">Issues tracked</div>
+        </div>
+        <div class="card stat" style="padding:13px">
+          <div class="value" id="stat-cats">12</div><div class="label">AI categories</div>
+        </div>
+        <div class="card stat ok" style="padding:13px">
+          <div class="value" id="stat-depts">8</div><div class="label">Departments wired</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="small faint">
+      Open data: OpenStreetMap · Nominatim · Overpass · Open311 model · UN SDG 11
+    </div>
+  </section>
+
+  <section class="auth-form-side">
+    <div class="auth-card">
+      <div class="card">
+        <div class="tabs">
+          <button class="active" data-tab="login">Sign in</button>
+          <button data-tab="register">Create citizen account</button>
+        </div>
+
+        <div id="error" class="err hidden"></div>
+
+        <form id="login-form">
+          <label class="field"><span>Email</span><input type="email" name="email" autocomplete="email" placeholder="you@example.com" required></label>
+          <label class="field"><span>Password</span><input type="password" name="password" autocomplete="current-password" placeholder="••••••••" required></label>
+          <button class="btn primary block" type="submit">Sign in to CivicPulse</button>
+        </form>
+
+        <form id="register-form" class="hidden">
+          <label class="field"><span>Full name</span><input name="name" placeholder="Ananya Rao" required></label>
+          <label class="field"><span>Email</span><input type="email" name="email" placeholder="you@example.com" required></label>
+          <label class="field"><span>Mobile (optional)</span><input name="phone" placeholder="+91-98450-00000"></label>
+          <label class="field"><span>Password</span><input type="password" name="password" placeholder="At least 6 characters" required></label>
+          <button class="btn primary block" type="submit">Create account &amp; start reporting</button>
+        </form>
+      </div>
+
+      <div class="card" style="margin-top:14px">
+        <div class="tiny" style="margin-bottom:9px">Demo accounts — click to fill</div>
+        <div class="col" style="gap:6px" id="demo-list"></div>
+      </div>
+    </div>
+  </section>
+</div>
+
+<script type="module">
+import { api, store, homeFor, esc } from '/js/core.js';
+
+if (store.token && store.user) location.href = homeFor(store.user.role);
+
+const errBox = document.getElementById('error');
+const showError = (msg) => { errBox.textContent = msg; errBox.classList.remove('hidden'); };
+const clearError = () => errBox.classList.add('hidden');
+
+document.querySelectorAll('.tabs button').forEach((b) => {
+  b.onclick = () => {
+    document.querySelectorAll('.tabs button').forEach((x) => x.classList.toggle('active', x === b));
+    document.getElementById('login-form').classList.toggle('hidden', b.dataset.tab !== 'login');
+    document.getElementById('register-form').classList.toggle('hidden', b.dataset.tab !== 'register');
+    clearError();
+  };
+});
+
+async function submit(path, body, button) {
+  clearError();
+  button.disabled = true;
+  const original = button.textContent;
+  button.innerHTML = '<span class="spinner"></span> Please wait';
+  try {
+    const out = await api(path, { method: 'POST', body });
+    store.token = out.token;
+    store.user = out.user;
+    location.href = homeFor(out.user.role);
+  } catch (e) {
+    showError(e.message);
+    button.disabled = false;
+    button.textContent = original;
+  }
+}
+
+document.getElementById('login-form').onsubmit = (e) => {
+  e.preventDefault();
+  const f = new FormData(e.target);
+  submit('/auth/login', { email: f.get('email'), password: f.get('password') }, e.target.querySelector('button'));
+};
+
+document.getElementById('register-form').onsubmit = (e) => {
+  e.preventDefault();
+  const f = new FormData(e.target);
+  submit('/auth/register', {
+    name: f.get('name'), email: f.get('email'), phone: f.get('phone'), password: f.get('password')
+  }, e.target.querySelector('button'));
+};
+
+const roleTag = { citizen: 'info', worker: 'accent', supervisor: 'warn', admin: 'danger' };
+
+fetch('/api/auth/demo-accounts').then((r) => r.json()).then((rows) => {
+  document.getElementById('demo-list').innerHTML = rows.map((a) => `
+    <button class="demo-account" data-email="${esc(a.email)}" data-password="${esc(a.password)}">
+      <span class="badge ${roleTag[a.role] || ''}">${esc(a.role)}</span>
+      <span class="grow">
+        <b>${esc(a.name)}</b>
+        <span class="faint small mono" style="display:block">${esc(a.email)}</span>
+      </span>
+    </button>`).join('');
+
+  document.querySelectorAll('.demo-account').forEach((b) => {
+    b.onclick = () => {
+      document.querySelector('.tabs button[data-tab="login"]').click();
+      const form = document.getElementById('login-form');
+      form.email.value = b.dataset.email;
+      form.password.value = b.dataset.password;
+      form.querySelector('button').click();
+    };
+  });
+});
+
+fetch('/api/health').then((r) => r.json()).then((h) => {
+  document.getElementById('stat-issues').textContent = h.counts.issues;
+  document.getElementById('stat-depts').textContent = h.counts.departments;
+  document.getElementById('stat-cats').textContent = h.ai.onboard.categories;
+}).catch(() => {});
+</script>
+</body>
+</html>

@@ -1,0 +1,24 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - run: npm install --no-audit --no-fund
+      - name: Boot the server and check health
+        run: |
+          node server/index.js &
+          sleep 4
+          curl -sf http://localhost:4000/api/health | tee /dev/stderr | grep -q '"status":"ok"'
+        env:
+          ENABLE_REVERSE_GEOCODE: 'false'
+          ENABLE_OSM_CONTRACTORS: 'false'

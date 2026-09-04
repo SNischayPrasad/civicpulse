@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CivicPulse · Department console</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><text y='19' font-size='19'>📡</text></svg>">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<link rel="stylesheet" href="/css/app.css">
+</head>
+<body>
+<div class="shell">
+  <aside class="sidebar"></aside>
+
+  <main class="main">
+    <header class="topbar">
+      <div class="grow">
+        <h1 data-title>Department console</h1>
+        <div class="muted small" data-subtitle></div>
+      </div>
+      <div class="row">
+        <span class="live-dot"></span><span class="small muted" data-live-text>Connecting</span>
+        <button class="btn sm" id="refresh-btn">Refresh</button>
+      </div>
+    </header>
+
+    <div class="grid cols-4" style="margin-bottom:16px">
+      <div class="card stat accent"><div class="value" id="s-open">0</div><div class="label">Open in my department</div></div>
+      <div class="card stat danger"><div class="value" id="s-overdue">0</div><div class="label">SLA breached</div></div>
+      <div class="card stat"><div class="value" id="s-mine">0</div><div class="label">Assigned to me</div></div>
+      <div class="card stat ok"><div class="value" id="s-sla">—</div><div class="label">SLA compliance</div></div>
+    </div>
+
+    <!-- ============================================================= QUEUE -->
+    <section data-view="queue">
+      <div class="grid split">
+        <div class="card">
+          <div class="card-head">
+            <h2>Work queue</h2>
+            <div class="row">
+              <select id="status-filter" style="width:auto">
+                <option value="">All open</option>
+                <option value="ROUTED">Newly routed</option>
+                <option value="ACKNOWLEDGED">Acknowledged</option>
+                <option value="ASSIGNED">Assigned</option>
+                <option value="IN_PROGRESS">In progress</option>
+                <option value="ESCALATED">Escalated</option>
+                <option value="RESOLVED">Resolved</option>
+                <option value="CLOSED">Closed</option>
+              </select>
+            </div>
+          </div>
+          <div class="issue-list" id="queue-list"></div>
+        </div>
+
+        <div>
+          <div class="card">
+            <div class="card-head"><h3>Live alert feed</h3><span class="badge accent" id="alert-count">0</span></div>
+            <div class="col" style="gap:8px;max-height:420px;overflow-y:auto" id="alert-feed"></div>
+          </div>
+          <div class="card">
+            <div class="card-head"><h3>Department map</h3></div>
+            <div id="dept-map" class="map" style="height:280px"></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============================================================ FIELD -->
+    <section data-view="field" class="hidden">
+      <div class="card">
+        <div class="card-head"><h2>My field tasks</h2><span class="small muted">Upload before &amp; after photos from different angles to close a job</span></div>
+        <div class="issue-list" id="field-list"></div>
+      </div>
+    </section>
+
+    <!-- ======================================================== CONTRACTORS -->
+    <section data-view="contractors" class="hidden">
+      <div class="card">
+        <div class="card-head">
+          <h2>Contractor accountability</h2>
+          <input id="contractor-search" placeholder="Search name, ward or work type" style="width:280px">
+        </div>
+        <div id="contractor-table"></div>
+      </div>
+    </section>
+
+    <!-- ============================================================= TEAM -->
+    <section data-view="team" class="hidden">
+      <div class="card">
+        <div class="card-head"><h2>Field team</h2></div>
+        <div id="team-table"></div>
+      </div>
+    </section>
+  </main>
+</div>
+
+<div id="modal-root"></div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="/socket.io/socket.io.js"></script>
+<script type="module" src="/js/staff.js"></script>
+</body>
+</html>

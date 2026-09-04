@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CivicPulse · City control room</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><text y='19' font-size='19'>📡</text></svg>">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<link rel="stylesheet" href="/css/app.css">
+</head>
+<body>
+<div class="shell">
+  <aside class="sidebar"></aside>
+
+  <main class="main">
+    <header class="topbar">
+      <div class="grow">
+        <h1 data-title>City control room</h1>
+        <div class="muted small" data-subtitle></div>
+      </div>
+      <div class="row">
+        <span class="live-dot"></span><span class="small muted" data-live-text>Connecting</span>
+        <button class="btn sm" id="refresh-btn">Refresh</button>
+      </div>
+    </header>
+
+    <!-- ========================================================== OVERVIEW -->
+    <section data-view="overview">
+      <div class="grid cols-4">
+        <div class="card stat accent"><div class="value" id="k-issues">0</div><div class="label">Total issues</div><div class="delta" id="k-citizens"></div></div>
+        <div class="card stat warn"><div class="value" id="k-open">0</div><div class="label">Open now</div><div class="delta" id="k-overdue"></div></div>
+        <div class="card stat ok"><div class="value" id="k-sla">—</div><div class="label">SLA compliance</div><div class="delta" id="k-avg"></div></div>
+        <div class="card stat"><div class="value" id="k-conf">—</div><div class="label">Avg AI confidence</div><div class="delta" id="k-engine"></div></div>
+      </div>
+
+      <div class="grid split" style="margin-top:16px">
+        <div class="card">
+          <div class="card-head"><h2>Reported vs closed · 14 days</h2><span class="badge" id="trend-total"></span></div>
+          <div class="sparkline" id="trend"></div>
+          <div class="row space-between small faint" style="margin-top:6px"><span id="trend-start"></span><span id="trend-end"></span></div>
+
+          <div class="card-head" style="margin-top:24px"><h3>Issue mix by category</h3></div>
+          <div id="cat-bars"></div>
+        </div>
+
+        <div>
+          <div class="card ai-panel">
+            <div class="tiny">AI decision layer</div>
+            <div id="ai-status"></div>
+          </div>
+          <div class="card">
+            <div class="card-head"><h3>Department load</h3></div>
+            <div id="dept-table"></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ========================================================== HOTSPOTS -->
+    <section data-view="hotspots" class="hidden">
+      <div class="grid split">
+        <div class="card">
+          <div class="card-head"><h2>City heat map</h2><span class="small muted">Marker size = number of citizen reports</span></div>
+          <div id="admin-map" class="map" style="height:520px"></div>
+        </div>
+        <div class="card">
+          <div class="card-head"><h3>Recurring hotspots</h3><span class="badge warn" id="hot-count">0</span></div>
+          <div class="col" id="hotspot-list" style="gap:9px"></div>
+          <p class="small faint" style="margin-top:12px">Hotspots are grid cells with repeat reports — these become planned prevention work rather than repeated complaints.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============================================================ REVIEW -->
+    <section data-view="review" class="hidden">
+      <div class="card">
+        <div class="card-head"><h2>Human review queue</h2><span class="badge warn" id="review-count">0</span></div>
+        <p class="small muted" style="margin-top:-8px">Issues where the AI confidence fell below the threshold. A supervisor confirms or overrides the classification.</p>
+        <div class="issue-list" id="review-list"></div>
+      </div>
+      <div class="card">
+        <div class="card-head"><h2>All issues</h2><input id="search" placeholder="Search code, category, ward" style="width:280px"></div>
+        <div class="issue-list" id="all-list"></div>
+      </div>
+    </section>
+
+    <!-- ======================================================= CONTRACTORS -->
+    <section data-view="contractors" class="hidden">
+      <div class="card">
+        <div class="card-head"><h2>Open-data contractor registry</h2><span class="small muted">Sources: municipal contract disclosures + OpenStreetMap</span></div>
+        <div id="contractor-table"></div>
+      </div>
+    </section>
+
+    <!-- ============================================================= STAFF -->
+    <section data-view="staff" class="hidden">
+      <div class="grid split">
+        <div class="card">
+          <div class="card-head"><h2>Departments &amp; performance</h2></div>
+          <div id="dept-perf"></div>
+        </div>
+        <div class="card">
+          <div class="card-head"><h2>Add a staff account</h2></div>
+          <form id="staff-form">
+            <label class="field"><span>Name</span><input name="name" required></label>
+            <label class="field"><span>Email</span><input name="email" type="email" required></label>
+            <label class="field"><span>Password</span><input name="password" value="Worker@123" required></label>
+            <label class="field"><span>Role</span>
+              <select name="role"><option value="worker">Field worker</option><option value="supervisor">Supervisor</option><option value="admin">Control room admin</option></select>
+            </label>
+            <label class="field"><span>Department</span><select name="departmentId" id="dept-select"></select></label>
+            <label class="field"><span>Employee ID</span><input name="employeeId" placeholder="BBMP-RD-0000"></label>
+            <button class="btn primary block" type="submit">Create account</button>
+          </form>
+        </div>
+      </div>
+    </section>
+  </main>
+</div>
+
+<div id="modal-root"></div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="/socket.io/socket.io.js"></script>
+<script type="module" src="/js/admin.js"></script>
+</body>
+</html>
