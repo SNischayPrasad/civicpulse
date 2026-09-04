@@ -85,6 +85,12 @@ export async function clipClassify(buffers) {
   const nonCivic = scores._NONE || 0;
   delete scores._NONE;
 
+  // Before renormalising, ask the question that actually matters for a random
+  // photo: did the "not a civic issue" prompts outscore every civic category?
+  const topCivicRaw = Math.max(...Object.values(scores), 0);
+  const nonCivicWins = nonCivic > topCivicRaw;
+  const civicMargin = +(topCivicRaw - nonCivic).toFixed(4);
+
   // renormalise across civic categories only
   const total = Object.values(scores).reduce((a, b) => a + b, 0) || 1;
   const ranked = Object.entries(scores)
@@ -104,6 +110,9 @@ export async function clipClassify(buffers) {
     ranked,
     scores,
     nonCivic: +nonCivic.toFixed(4),
+    nonCivicWins,
+    civicMargin,
+    topCivicRaw: +topCivicRaw.toFixed(4),
     agreement: +agreement.toFixed(2),
     angles: perImage.length,
     ms: Date.now() - started

@@ -13,11 +13,11 @@
  * The classification taxonomy and NLP layer are the SAME source files the
  * Node backend uses, so the AI behaviour matches the full-stack build.
  */
-import { DEPARTMENTS, CATEGORIES, categoryMeta, SEVERITY_LABELS } from './taxonomy.js';
-import { classifyText, urgencyScore } from './nlp.js';
-import { analyseImages, loadImage, sampleImage, describe, perceptualHash, phashDistance } from './vision.js';
-import { clipClassify, categoryScore, loadModel, modelState, onModelProgress } from './clip.js';
-import { resolveAddress, ocrState, onOcrProgress } from './address.js';
+import { DEPARTMENTS, CATEGORIES, categoryMeta, SEVERITY_LABELS } from './taxonomy.js?v=20260905b';
+import { classifyText, urgencyScore } from './nlp.js?v=20260905b';
+import { analyseImages, loadImage, sampleImage, describe, perceptualHash, phashDistance } from './vision.js?v=20260905b';
+import { clipClassify, categoryScore, loadModel, modelState, onModelProgress } from './clip.js?v=20260905b';
+import { resolveAddress, ocrState, onOcrProgress } from './address.js?v=20260905b';
 
 export { ocrState, onOcrProgress };
 
@@ -378,7 +378,7 @@ export async function analyseIssue(sources, description = '', context = {}) {
     (clip ? clip.agreement : vision.agreement) * 0.15 +
     (textAgrees ? 0.10 : 0) + (clipAgrees ? 0.15 : 0)));
 
-  const looksNonCivic = clip ? clip.nonCivic > 0.5 : false;
+  const looksNonCivic = clip ? clip.nonCivicWins : false;
   if (looksNonCivic) confidence *= 0.6;
 
   const severity = severityModel({ category, features: vision.features, urgency, duplicateCount: context.duplicateCount || 0 });
@@ -405,6 +405,8 @@ export async function analyseIssue(sources, description = '', context = {}) {
     angles: vision.angles, agreement: clip?.agreement ?? vision.agreement,
     features: vision.features, hashes: vision.hashes,
     looksNonCivic,
+    civicMargin: clip ? clip.civicMargin : null,
+    nonCivicScore: clip ? clip.nonCivic : null,
     needsHumanReview: confidence < CONFIG.confidenceThreshold || looksNonCivic,
     processingMs: Math.round(performance.now() - started)
   };
@@ -571,6 +573,16 @@ export async function reportIssue({ sources, exifs = [], description = '', landm
 
   const nearbyAll = read().issues.filter((i) => OPEN.includes(i.status) && haversine(point, i.location) <= CONFIG.duplicateRadiusM);
   const ai = await analyseIssue(sources, description, { duplicateCount: nearbyAll.length });
+  // The vision model scores every photo against a "_NONE" bucket of everyday
+  // scenes. When that outscores all 12 civic categories the photo is not a
+  // civic issue, and filing it would put noise in a department's queue.
+  if (ai.looksNonCivic) {
+    const err = new Error('This photo does not look like a civic issue. The vision model matched it against everyday scenes rather than any of the 12 civic categories. Photograph the actual problem - the pothole, the garbage, the broken light - and try again.');
+    err.notCivicIssue = true;
+    err.ai = ai;
+    throw err;
+  }
+
   const place = await reverseGeocode(point);
   const diversity = angleDiversity(ai.hashes);
 

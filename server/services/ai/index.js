@@ -131,7 +131,7 @@ export async function analyseIssue(buffers, description = '', context = {}) {
 
   // Does this even look like a civic issue? _NONE winning means "probably not".
   const civicScore = clip ? 1 - clamp(clip.nonCivic, 0, 1) : null;
-  const looksNonCivic = clip ? clip.nonCivic > 0.5 : false;
+  const looksNonCivic = clip ? clip.nonCivicWins : false;
   if (looksNonCivic) confidence *= 0.6;
 
   const severity = severityModel({
@@ -177,6 +177,8 @@ export async function analyseIssue(buffers, description = '', context = {}) {
     features: vision.features,
     hashes: vision.perImage.filter((p) => p.ok).map((p) => p.hashes),
     looksNonCivic,
+    civicMargin: clip ? clip.civicMargin : null,
+    nonCivicScore: clip ? clip.nonCivic : null,
     needsHumanReview: confidence < config.ai.confidenceThreshold || looksNonCivic || (remote && !remote.isCivicIssue),
     processingMs: Date.now() - started
   };

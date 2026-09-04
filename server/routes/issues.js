@@ -130,6 +130,22 @@ router.post('/', requireAuth, upload.array('photos', config.policy.maxPhotos), a
     const ai = await analyseIssue(buffers, description, { duplicateCount: nearbyAll.length });
     if (!ai.ok) return res.status(400).json({ error: ai.error });
 
+    // The vision model scores every photo against a "_NONE" bucket of everyday
+    // scenes. When that outscores all 12 civic categories the photo is not a
+    // civic issue, and filing it would put noise in a department's queue.
+    if (ai.looksNonCivic) {
+      return res.status(422).json({
+        error: 'This photo does not look like a civic issue. The vision model matched it against everyday scenes rather than any of the 12 civic categories. Photograph the actual problem - the pothole, the garbage, the broken light - and try again.',
+        notCivicIssue: true,
+        ai: {
+          engine: ai.engine, model: ai.model,
+          closestCategory: ai.categoryLabel,
+          closestScore: ai.visionModel?.topMatches?.[0]?.probability ?? null,
+          nonCivicScore: ai.nonCivicScore
+        }
+      });
+    }
+
     const diversity = angleDiversity(ai.hashes);
     const place = await reverseGeocode(location);
 

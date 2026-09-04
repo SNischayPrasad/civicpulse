@@ -1,9 +1,9 @@
 /* CivicPulse static build - UI layer for citizen, department and control room. */
-import * as E from './engine.js';
-import { onModelProgress } from './clip.js';
-import { onOcrProgress } from './address.js';
-import { readExif, compressImage } from './exif.js';
-import { CATEGORIES, SEVERITY_LABELS } from './taxonomy.js';
+import * as E from './engine.js?v=20260905b';
+import { onModelProgress } from './clip.js?v=20260905b';
+import { onOcrProgress } from './address.js?v=20260905b';
+import { readExif, compressImage } from './exif.js?v=20260905b';
+import { CATEGORIES, SEVERITY_LABELS } from './taxonomy.js?v=20260905b';
 
 /* ----------------------------------------------------------------- helpers */
 
@@ -350,9 +350,23 @@ async function submitReport() {
     $('description').value = ''; $('landmark').value = '';
     renderAll();
   } catch (e) {
-    toast('Could not submit', e.message, 'error');
-    $('ai-result').classList.add('hidden');
-    $('ai-empty').classList.remove('hidden');
+    if (e.notCivicIssue) {
+      const m = e.ai?.visionModel;
+      $('ai-result').innerHTML = `
+        <div class="badge warn" style="margin-bottom:10px">Not a civic issue</div>
+        <div class="ai-verdict"><div style="font-size:30px">⚠</div>
+          <div class="grow"><div class="cat">Report not filed</div>
+            <div class="small muted">${esc(e.ai?.engine || 'vision model')}</div></div></div>
+        <p class="small">${esc(e.message)}</p>
+        ${m ? `<div class="tiny" style="margin-top:12px">Closest civic categories the model considered</div>
+        <div>${m.topMatches.map((x) => `<span class="evidence-chip">${esc(x.label)} <b>${Math.round(x.probability * 100)}%</b></span>`).join('')}</div>
+        <div class="small faint" style="margin-top:8px">All of these scored below the model's "everyday scene" prompts, so nothing was sent to a department.</div>` : ''}`;
+      toast('Not filed', 'That photo does not look like a civic issue.', 'warn');
+    } else {
+      toast('Could not submit', e.message, 'error');
+      $('ai-result').classList.add('hidden');
+      $('ai-empty').classList.remove('hidden');
+    }
   } finally {
     offModel(); offOcr();
     btn.disabled = false;
@@ -367,7 +381,8 @@ function renderAiResult({ issue, ai, duplicate, message }) {
     <div class="ai-verdict">
       <div style="font-size:30px">${ICONS[ai.icon] || '◍'}</div>
       <div class="grow"><div class="cat">${esc(ai.categoryLabel)}</div>
-        <div class="small muted">${esc(ai.engine)} · ${ai.processingMs} ms · ${ai.angles} angle${ai.angles > 1 ? 's' : ''}</div></div>
+        <div class="small muted">${esc(ai.engine)} · ${ai.processingMs} ms · ${ai.angles} angle${ai.angles > 1 ? 's' : ''}</div>
+        ${ai.visionModel ? `<div class="small faint mono">${esc(ai.visionModel.name)} · Hugging Face</div>` : ''}</div>
       ${sevChip(ai.severity, ai.severityLabel)}
     </div>
     <div class="row space-between small"><span class="muted">Confidence</span><b class="mono">${pct}%</b></div>
