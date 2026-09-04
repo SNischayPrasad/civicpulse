@@ -8,7 +8,7 @@
  *
  * Prompts come from the SAME prompts.js file the backend uses.
  */
-import { PROMPTS, buildLabelSet, aggregate, MODEL_ID } from './prompts.js?v=20260905c';
+import { PROMPTS, buildLabelSet, aggregate, MODEL_ID, MIN_CIVIC_SHARE } from './prompts.js?v=20260905d';
 
 const CDN = 'https://cdn.jsdelivr.net/npm/@huggingface/transformers@4.2.0';
 const { labels, owner } = buildLabelSet();

@@ -13,11 +13,11 @@
  * The classification taxonomy and NLP layer are the SAME source files the
  * Node backend uses, so the AI behaviour matches the full-stack build.
  */
-import { DEPARTMENTS, CATEGORIES, categoryMeta, SEVERITY_LABELS } from './taxonomy.js?v=20260905c';
-import { classifyText, urgencyScore } from './nlp.js?v=20260905c';
-import { analyseImages, loadImage, sampleImage, describe, perceptualHash, phashDistance } from './vision.js?v=20260905c';
-import { clipClassify, categoryScore, loadModel, modelState, onModelProgress } from './clip.js?v=20260905c';
-import { resolveAddress, ocrState, onOcrProgress } from './address.js?v=20260905c';
+import { DEPARTMENTS, CATEGORIES, categoryMeta, SEVERITY_LABELS } from './taxonomy.js?v=20260905d';
+import { classifyText, urgencyScore } from './nlp.js?v=20260905d';
+import { analyseImages, loadImage, sampleImage, describe, perceptualHash, phashDistance } from './vision.js?v=20260905d';
+import { clipClassify, categoryScore, loadModel, modelState, onModelProgress } from './clip.js?v=20260905d';
+import { resolveAddress, ocrState, onOcrProgress } from './address.js?v=20260905d';
 
 export { ocrState, onOcrProgress };
 

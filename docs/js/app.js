@@ -1,9 +1,9 @@
 /* CivicPulse static build - UI layer for citizen, department and control room. */
-import * as E from './engine.js?v=20260905c';
-import { onModelProgress } from './clip.js?v=20260905c';
-import { onOcrProgress } from './address.js?v=20260905c';
-import { readExif, compressImage } from './exif.js?v=20260905c';
-import { CATEGORIES, SEVERITY_LABELS } from './taxonomy.js?v=20260905c';
+import * as E from './engine.js?v=20260905d';
+import { onModelProgress } from './clip.js?v=20260905d';
+import { onOcrProgress } from './address.js?v=20260905d';
+import { readExif, compressImage } from './exif.js?v=20260905d';
+import { CATEGORIES, SEVERITY_LABELS } from './taxonomy.js?v=20260905d';
 
 /* ----------------------------------------------------------------- helpers */
 

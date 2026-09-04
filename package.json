@@ -16,7 +16,8 @@
     "test:address": "node test-address.mjs",
     "fixtures": "node scripts/fetch-test-photos.mjs",
     "test:noncivic": "node test-noncivic.mjs",
-    "predeploy": "node scripts/bump-cache-version.mjs"
+    "predeploy": "node scripts/check-docs-sync.mjs && node scripts/bump-cache-version.mjs",
+    "check:docs": "node scripts/check-docs-sync.mjs"
   },
   "engines": {
     "node": ">=18"
