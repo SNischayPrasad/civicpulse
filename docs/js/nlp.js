@@ -3,7 +3,7 @@
  * Token overlap + phrase matching against taxonomy keywords, plus urgency and
  * hazard cue detection that feeds the severity model.
  */
-import { CATEGORIES, CATEGORY_KEYS } from './taxonomy.js?v=20260905b';
+import { CATEGORIES, CATEGORY_KEYS } from './taxonomy.js?v=20260905c';
 
 const URGENCY_CUES = [
   ['accident', 2], ['injured', 2], ['injury', 2], ['fell', 1.5], ['danger', 1.5], ['dangerous', 1.5],

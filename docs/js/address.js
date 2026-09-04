@@ -9,7 +9,7 @@
  * the first time a citizen submits photos, so visitors who just browse the map
  * never pay for the download.
  */
-import { tidyLines, parseAddressHints, compose, addressConfidence } from './address-core.js?v=20260905b';
+import { tidyLines, parseAddressHints, compose, addressConfidence } from './address-core.js?v=20260905c';
 
 const CDN = 'https://cdn.jsdelivr.net/npm/tesseract.js@6.0.1/dist/tesseract.esm.min.js';
 

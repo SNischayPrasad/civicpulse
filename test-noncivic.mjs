@@ -43,18 +43,41 @@ for(const [label,title] of NON_CIVIC){
   console.log(`  ${ok?'REJECTED ':'FILED !! '} ${label.padEnd(22)} ${ok?`(closest: ${j.ai.closestCategory})`:`-> ${j.issue?.categoryLabel}`}`);
 }
 
+// Local fixtures, including screenshots. This is the case that actually shipped
+// broken: a screenshot of a code repository was filed as a water pipeline leak
+// because nothing in the distractor prompts described a screenshot.
+console.log('\n--- LOCAL non-civic fixtures (should be REJECTED) ---');
+const LOCAL='test-fixtures/noncivic';
+if(fs.existsSync(LOCAL)){
+  for(const f of fs.readdirSync(LOCAL).filter(x=>/\.(jpe?g|png)$/i.test(x))){
+    nonTotal++;
+    const fd=new FormData();
+    fd.append('photos',new Blob([fs.readFileSync(`${LOCAL}/${f}`)],{type:/png$/i.test(f)?'image/png':'image/jpeg'}),f);
+    fd.append('lat','12.9352');fd.append('lng','77.6245');
+    const res=await fetch(BASE+'/api/issues',{method:'POST',headers:{Authorization:'Bearer '+token},body:fd});
+    const j=await res.json();
+    const ok=res.status===422&&j.notCivicIssue;
+    if(ok)rejected++;
+    console.log(`  ${ok?'REJECTED ':'FILED !! '} ${f.padEnd(26)} ${ok?`(closest: ${j.ai.closestCategory})`:`-> ${j.issue?.categoryLabel}`}`);
+  }
+} else console.log('  (no local fixtures - run: npm run fixtures)');
+
 console.log('\n--- CIVIC photos (should still be FILED) ---');
+// Spread these far apart, and away from any earlier run, so the duplicate
+// clusterer does not merge them and mask a real rejection.
+const jitter=Number(process.env.SEED||process.hrtime.bigint()%1000n)/1000;
 for(const [label,path] of CIVIC){
   if(!fs.existsSync(path)){console.log(`  skip ${label}`);continue;}
   civTotal++;
   const fd=new FormData();
   fd.append('photos',new Blob([fs.readFileSync(path)],{type:'image/jpeg'}),'x.jpg');
-  fd.append('lat',String(12.9+Math.round(civTotal)*0.05));fd.append('lng','77.62');
+  fd.append('lat',String(20+civTotal*0.7+jitter));fd.append('lng',String(75+civTotal*0.7+jitter));
   const res=await fetch(BASE+'/api/issues',{method:'POST',headers:{Authorization:'Bearer '+token},body:fd});
   const j=await res.json();
-  const ok=res.status===201;
+  // 201 = newly filed; 200 + duplicate = accepted and merged into a cluster.
+  const ok=res.status===201||(res.status===200&&j.duplicate);
   if(ok)filed++;
-  console.log(`  ${ok?'FILED    ':'REJECTED!'} ${label.padEnd(22)} ${ok?`-> ${j.ai.categoryLabel} (${j.ai.confidence})`:j.error?.slice(0,60)}`);
+  console.log(`  ${ok?'FILED    ':'REJECTED!'} ${label.padEnd(22)} ${ok?`-> ${j.ai.categoryLabel} (${j.ai.confidence})`:(j.error||'').slice(0,70)}`);
 }
 
 console.log(`\nnon-civic rejected: ${rejected}/${nonTotal}   civic still filed: ${filed}/${civTotal}`);

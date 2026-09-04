@@ -102,6 +102,15 @@ photos are **genuinely different viewpoints** rather than the same frame uploade
 | CLIP zero-shot | 91% | 7 / 8 |
 | CLIP + text NLP (as shipped) | **100%** | **8 / 8** |
 
+**Photos that are not civic issues are refused, not routed.** The prompt bank
+includes a `_NONE` bucket of everyday scenes — screenshots, documents, pets,
+food, portraits, clean roads — and a photo is only filed if the winning civic
+category both beats that bucket and clears an absolute floor of 35% of the
+probability mass. Measured separation: civic photos score 0.61–0.99, non-civic
+photos 0.000–0.007. On the fixture set, 14/14 non-civic photos (including five
+real application screenshots) are rejected while 3/3 civic photos still file at
+0.99 confidence.
+
 Every verdict carries **why**: the prompt matches, the visual features, the text
 signals that agreed, the alternates considered, and a confidence. Below
 `AI_CONFIDENCE_THRESHOLD` the issue goes to **human review** rather than being

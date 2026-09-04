@@ -6,7 +6,7 @@
  * the browser hands us pixels through <canvas>, so no JPEG decoder is needed.
  * The taxonomy and the NLP layer are the *same source files* as the backend.
  */
-import { CATEGORIES, CATEGORY_KEYS } from './taxonomy.js?v=20260905b';
+import { CATEGORIES, CATEGORY_KEYS } from './taxonomy.js?v=20260905c';
 
 const GRID = 96;
 const clamp01 = (x) => (x < 0 ? 0 : x > 1 ? 1 : x);

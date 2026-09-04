@@ -28,6 +28,15 @@ const REPAIRED = [
   'File:Chestnut Mt Rd, looking south over Truevine.jpg'
 ];
 
+/** Photos that are NOT civic issues - the model must refuse to file these. */
+const NON_CIVIC = [
+  ['cat', 'File:Cat November 2010-1a.jpg'],
+  ['dog', 'File:Golde33443.jpg'],
+  ['food', 'File:Good Food Display - NCI Visuals Online.jpg'],
+  ['flower', 'File:Sunflower sky backdrop.jpg'],
+  ['person', 'File:Portrait Placeholder.png']
+];
+
 /** Photos containing legible street signage, for the address-AI test. */
 const SIGNAGE = [
   'File:2nd B Cross Rd, Banaswadi, Bengaluru, Karnataka 560043, India (Ank Kumar, Infosys Limited) 02.jpg',

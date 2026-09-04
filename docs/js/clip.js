@@ -8,7 +8,7 @@
  *
  * Prompts come from the SAME prompts.js file the backend uses.
  */
-import { PROMPTS, buildLabelSet, aggregate, MODEL_ID } from './prompts.js?v=20260905b';
+import { PROMPTS, buildLabelSet, aggregate, MODEL_ID } from './prompts.js?v=20260905c';
 
 const CDN = 'https://cdn.jsdelivr.net/npm/@huggingface/transformers@4.2.0';
 const { labels, owner } = buildLabelSet();
@@ -91,7 +91,8 @@ export async function clipClassify(sources) {
   // Before renormalising, ask the question that actually matters for a random
   // photo: did the "not a civic issue" prompts outscore every civic category?
   const topCivicRaw = Math.max(...Object.values(scores), 0);
-  const nonCivicWins = nonCivic > topCivicRaw;
+  const belowFloor = topCivicRaw < MIN_CIVIC_SHARE;
+  const nonCivicWins = nonCivic > topCivicRaw || belowFloor;
   const civicMargin = +(topCivicRaw - nonCivic).toFixed(4);
 
   const total = Object.values(scores).reduce((a, b) => a + b, 0) || 1;
@@ -106,6 +107,8 @@ export async function clipClassify(sources) {
     ok: true, model: MODEL_ID, ranked, scores,
     nonCivic: +nonCivic.toFixed(4),
     nonCivicWins,
+    belowFloor,
+    minCivicShare: MIN_CIVIC_SHARE,
     civicMargin,
     topCivicRaw: +topCivicRaw.toFixed(4),
     agreement: +agreement.toFixed(2),

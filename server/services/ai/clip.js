@@ -9,7 +9,7 @@
  * the model cannot be loaded, and its descriptors still power the before/after
  * closure verification.
  */
-import { PROMPTS, buildLabelSet, aggregate, MODEL_ID } from './prompts.js';
+import { PROMPTS, buildLabelSet, aggregate, MODEL_ID, MIN_CIVIC_SHARE } from './prompts.js';
 
 const { labels, owner } = buildLabelSet();
 
@@ -88,7 +88,8 @@ export async function clipClassify(buffers) {
   // Before renormalising, ask the question that actually matters for a random
   // photo: did the "not a civic issue" prompts outscore every civic category?
   const topCivicRaw = Math.max(...Object.values(scores), 0);
-  const nonCivicWins = nonCivic > topCivicRaw;
+  const belowFloor = topCivicRaw < MIN_CIVIC_SHARE;
+  const nonCivicWins = nonCivic > topCivicRaw || belowFloor;
   const civicMargin = +(topCivicRaw - nonCivic).toFixed(4);
 
   // renormalise across civic categories only
@@ -111,6 +112,8 @@ export async function clipClassify(buffers) {
     scores,
     nonCivic: +nonCivic.toFixed(4),
     nonCivicWins,
+    belowFloor,
+    minCivicShare: MIN_CIVIC_SHARE,
     civicMargin,
     topCivicRaw: +topCivicRaw.toFixed(4),
     agreement: +agreement.toFixed(2),

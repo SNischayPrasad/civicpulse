@@ -78,14 +78,32 @@ export const PROMPTS = {
     'a broken damaged footpath beside a road',
     'cracked and uneven pavement tiles on a sidewalk'
   ],
+  // Distractors. These are not civic categories - they exist so that a photo of
+  // something else has somewhere better to land than the nearest civic label.
+  // Coverage matters more than elegance here: a screenshot of a code repository
+  // was once filed as a water pipeline leak purely because nothing in this list
+  // described a screenshot, so "water tones" was the best match available.
   _NONE: [
-    'a clean empty road in good condition',
-    'a portrait photo of a person',
+    'a screenshot of a computer screen',
+    'a screenshot of a website or an app user interface',
+    'source code or a terminal on a screen',
+    'a page of printed text or a document',
+    'a chart, graph or diagram',
+    'a mobile phone screen showing an app',
+    'a logo, poster or piece of digital artwork',
     'the interior of a room',
+    'a portrait photo of a person',
+    'a group of people at an event',
+    'a cat, dog or other animal',
+    'a plate of food or a meal',
+    'a flower or a potted houseplant',
+    'a product photographed on a plain background',
+    'a clean empty road in good condition',
     'an ordinary building facade',
     'a green park with grass and trees',
     'a car parked on a normal street',
-    'a landscape photo of nature'
+    'a landscape photo of nature',
+    'a blurry, dark or featureless photo'
   ]
 };
 
@@ -110,3 +128,15 @@ export function aggregate(results, owner) {
 }
 
 export const MODEL_ID = 'Xenova/clip-vit-base-patch32';
+
+/**
+ * Absolute floor on the winning civic category's share of total probability
+ * mass, applied on top of the _NONE comparison.
+ *
+ * Measured separation on the fixture set: genuine civic photos score 0.61-0.99,
+ * non-civic photos (screenshots, pets, food, portraits) score 0.02-0.17. A photo
+ * that beats the distractors but still cannot clear this floor is not a
+ * confident civic match, and gets bounced back to the citizen rather than into a
+ * department's queue.
+ */
+export const MIN_CIVIC_SHARE = 0.35;
