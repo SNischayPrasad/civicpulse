@@ -226,6 +226,11 @@ async function openIssue(id) {
         ${issue.description ? `<p class="small" style="margin-top:9px">"${esc(issue.description)}"</p>` : ''}
         ${issue.landmark ? `<p class="small faint">Landmark: ${esc(issue.landmark)}</p>` : ''}
         <div class="small faint">Location trust: ${esc(issue.location?.trust || '')} · ${esc(issue.geoSource)}</div>
+        ${issue.addressAI ? `<div class="card" style="margin-top:9px;padding:11px">
+          <div class="tiny">AI address (${Math.round(issue.addressAI.confidence * 100)}% · ${esc(issue.addressAI.source)})</div>
+          <div class="small" style="font-weight:650">${esc(issue.addressAI.formatted)}</div>
+          ${issue.addressAI.ocr.lines.length ? `<div class="small muted" style="margin-top:5px">Signage read: ${issue.addressAI.ocr.lines.slice(0, 3).map((l) => `<span class="badge">${esc(l.text)}</span>`).join(' ')}</div>` : ''}
+        </div>` : ''}
       </div>
       <div>
         <div class="ai-panel">

@@ -7,7 +7,7 @@ import db from './db.js';
 import { ensureSeed } from './seed.js';
 import { verifyToken } from './middleware/auth.js';
 import notify from './services/notify.js';
-import { aiStatus } from './services/ai/index.js';
+import { aiStatus, warmupAll } from './services/ai/index.js';
 
 import authRoutes from './routes/auth.js';
 import issueRoutes from './routes/issues.js';
@@ -121,6 +121,9 @@ function slaSweep() {
 setInterval(slaSweep, config.policy.slaTickMs).unref?.();
 slaSweep();
 
+// Load the vision + OCR models in the background so the first report is fast.
+warmupAll();
+
 server.listen(config.port, () => {
   const s = aiStatus();
   console.log('');
@@ -128,8 +131,10 @@ server.listen(config.port, () => {
   console.log('  ------------------------------------------------------------');
   console.log(`  Web app     : http://localhost:${config.port}`);
   console.log(`  API health  : http://localhost:${config.port}/api/health`);
-  console.log(`  AI engine   : on-board CivicVision (${s.onboard.categories} categories)`);
-  console.log(`  Hosted model: ${s.remote.configured ? `${s.remote.provider} (${s.remote.model || 'default model'})` : 'not configured - using on-board engine'}`);
+  console.log(`  AI engine   : CLIP zero-shot vision (${s.vision.model}) + text NLP`);
+  console.log(`  Address AI  : OCR signboard reading + OpenStreetMap geocoding`);
+  console.log(`  Fallback    : on-board CivicVision (${s.onboard.categories} categories)`);
+  console.log(`  Hosted model: ${s.remote.configured ? `${s.remote.provider} (${s.remote.model || 'default model'})` : 'not configured'}`);
   console.log(`  Realtime    : Socket.IO ready`);
   console.log('');
   console.log('  Demo logins : citizen@demo.in / Citizen@123');

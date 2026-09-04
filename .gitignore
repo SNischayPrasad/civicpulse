@@ -3,3 +3,6 @@ uploads/*
 !uploads/.gitkeep
 data/*.json
 .env
+test-fixtures/
+eng.traineddata
+*.traineddata

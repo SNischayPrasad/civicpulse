@@ -1,5 +1,7 @@
 /* CivicPulse static build - UI layer for citizen, department and control room. */
 import * as E from './engine.js';
+import { onModelProgress } from './clip.js';
+import { onOcrProgress } from './address.js';
 import { readExif, compressImage } from './exif.js';
 import { CATEGORIES, SEVERITY_LABELS } from './taxonomy.js';
 
@@ -312,11 +314,24 @@ async function submitReport() {
   btn.innerHTML = '<span class="spinner"></span> CivicVision is analysing your photos…';
   $('ai-empty').classList.add('hidden');
   $('ai-result').classList.remove('hidden');
+  const setStage = (msg) => {
+    const el = document.getElementById('ai-stage');
+    if (el) el.textContent = msg;
+  };
   $('ai-result').innerHTML = `<div class="scan card" style="padding:26px;text-align:center">
       <div class="spinner" style="margin:0 auto 12px;width:24px;height:24px;color:var(--accent)"></div>
-      <div style="font-weight:650">Reading ${state.photos.length} photo angle${state.photos.length > 1 ? 's' : ''}…</div>
-      <div class="small muted" style="margin-top:6px">Colour · texture · structure · specular analysis → category → department</div>
+      <div style="font-weight:650">Analysing ${state.photos.length} photo angle${state.photos.length > 1 ? 's' : ''}…</div>
+      <div class="small muted" style="margin-top:6px" id="ai-stage">Starting the vision model</div>
     </div>`;
+  const offModel = onModelProgress((i) => {
+    if (i.status === 'downloading') setStage(`Downloading the vision model — ${i.progress}% (one time, then cached)`);
+    else if (i.status === 'ready') setStage('Vision model ready — classifying the issue');
+    else if (i.status === 'error') setStage('Vision model unavailable, using the fallback engine');
+  });
+  const offOcr = onOcrProgress((i) => {
+    if (i.status === 'loading-ocr') setStage('Loading the text reader to find the address');
+    else if (i.status === 'reading') setStage(`Reading signboards in the photo — ${i.progress}%`);
+  });
 
   try {
     const out = await E.reportIssue({
@@ -339,6 +354,7 @@ async function submitReport() {
     $('ai-result').classList.add('hidden');
     $('ai-empty').classList.remove('hidden');
   } finally {
+    offModel(); offOcr();
     btn.disabled = false;
     btn.textContent = 'Analyse with AI & send to department';
   }
@@ -358,9 +374,22 @@ function renderAiResult({ issue, ai, duplicate, message }) {
     <div class="confidence"><i style="width:${pct}%"></i></div>
     ${ai.needsHumanReview ? '<div class="badge warn" style="margin-top:9px">Below threshold → queued for human review</div>' : ''}
     <p class="small" style="margin-top:13px">${esc(ai.summary)}</p>
+    ${ai.visionModel ? `<div class="tiny" style="margin-top:12px">Vision model match</div>
+    <div>${ai.visionModel.topMatches.map((m) => `<span class="evidence-chip">${esc(m.label)} <b>${Math.round(m.probability * 100)}%</b></span>`).join('')}</div>` : ''}
     <div class="tiny" style="margin-top:12px">Why the AI decided this</div>
     <div>${(ai.evidence || []).map((e) => `<span class="evidence-chip">${esc(e.label)} <b>${e.value}</b></span>`).join('') || '<span class="small faint">Colour and texture profile match.</span>'}</div>
     ${ai.textSignal?.matched?.length ? `<div class="small muted" style="margin-top:8px">Text signals: ${ai.textSignal.matched.map((m) => `<span class="badge">${esc(m)}</span>`).join(' ')}</div>` : ''}
+    ${issue.addressAI ? `
+    <div class="card" style="margin-top:14px;padding:13px;border-color:var(--accent-2)">
+      <div class="row space-between"><div class="tiny">Address determined by AI</div>
+        <span class="badge ${issue.addressAI.photoContributed ? 'accent' : ''}">${Math.round(issue.addressAI.confidence * 100)}% confident</span></div>
+      <div style="font-weight:650;margin-top:4px">${esc(issue.addressAI.formatted)}</div>
+      ${issue.addressAI.ocr.lines.length ? `<div class="small muted" style="margin-top:7px">Text read from your photo:
+        ${issue.addressAI.ocr.lines.slice(0, 4).map((l) => `<span class="badge">${esc(l.text)}</span>`).join(' ')}</div>` : ''}
+      <ul class="small faint" style="margin:8px 0 0 16px;padding:0">
+        ${issue.addressAI.signals.map((x) => `<li>${esc(x)}</li>`).join('')}</ul>
+    </div>` : ''}
+
     <div class="card" style="margin-top:14px;padding:13px;background:var(--surface-3)">
       <div class="tiny">Alert dispatched to</div>
       <div style="font-weight:700;font-size:15px;margin-top:3px">${esc(issue.department?.name || '')}</div>

@@ -16,6 +16,12 @@
 import { DEPARTMENTS, CATEGORIES, categoryMeta, SEVERITY_LABELS } from './taxonomy.js';
 import { classifyText, urgencyScore } from './nlp.js';
 import { analyseImages, loadImage, sampleImage, describe, perceptualHash, phashDistance } from './vision.js';
+import { clipClassify, categoryScore, loadModel, modelState, onModelProgress } from './clip.js';
+import { resolveAddress, ocrState, onOcrProgress } from './address.js';
+
+export { ocrState, onOcrProgress };
+
+export { loadModel as warmupVision, modelState, onModelProgress };
 
 export const CONFIG = {
   minPhotos: 1,
@@ -202,7 +208,7 @@ export async function reverseGeocode(p) {
       address: j.display_name || fallback.address,
       ward: wardName ? wardName.toUpperCase().replace(/\s+/g, '-') : gridCell(p),
       wardName: wardName || fallback.wardName,
-      city: a.city || a.town || null, state: a.state || null, source: 'nominatim'
+      city: a.city || a.town || null, state: a.state || null, addressDetail: a, source: 'nominatim'
     };
     geoCache.set(k, out);
     return out;
@@ -301,12 +307,16 @@ export async function queryOsmWorks(point, radiusM = 500) {
 
 /* ------------------------------------------------------------- AI verdict */
 
-function fuse(visionRanked, textRanked, textStrength) {
+function fuse(signals) {
   const combined = {};
-  for (const v of visionRanked) combined[v.category] = (combined[v.category] || 0) + v.probability * 0.62;
-  if (textStrength > 0) for (const t of textRanked) combined[t.category] = (combined[t.category] || 0) + t.probability * 0.38;
+  for (const { ranked, weight } of signals) {
+    if (!ranked || !weight) continue;
+    for (const r of ranked) combined[r.category] = (combined[r.category] || 0) + (r.probability ?? r.score ?? 0) * weight;
+  }
   const total = Object.values(combined).reduce((a, b) => a + b, 0) || 1;
-  return Object.entries(combined).map(([category, s]) => ({ category, score: +(s / total).toFixed(4) })).sort((a, b) => b.score - a.score);
+  return Object.entries(combined)
+    .map(([category, s]) => ({ category, score: +(s / total).toFixed(4) }))
+    .sort((a, b) => b.score - a.score);
 }
 
 function severityModel({ category, features, urgency, duplicateCount }) {
@@ -321,7 +331,12 @@ function severityModel({ category, features, urgency, duplicateCount }) {
   return Math.max(1, Math.min(5, Math.round(sev)));
 }
 
-function narrate(category, f, severity, angles) {
+function narrate(category, f, severity, angles, clip) {
+  const meta = categoryMeta(category);
+  if (clip) {
+    const pct = Math.round((clip.ranked[0]?.probability || 0) * 100);
+    return `The vision model recognised ${meta.label.toLowerCase()} in ${angles} photo angle${angles > 1 ? 's' : ''} (${pct}% match against the civic issue prompt set). Assessed severity: ${SEVERITY_LABELS[severity]}.`;
+  }
   const cues = [];
   if (f.darkPatchRatio > 0.3) cues.push('a distinct dark cavity in the surface');
   if (f.asphaltRatio > 0.4) cues.push('road/asphalt surroundings');
@@ -329,42 +344,68 @@ function narrate(category, f, severity, angles) {
   if (f.greenRatio > 0.45) cues.push('heavy vegetation coverage');
   if (f.specularRatio > 0.35) cues.push('standing/reflective water');
   if (f.verticalStructure > 0.4) cues.push('a tall vertical pole structure');
-  if (f.nightRatio > 0.45) cues.push('a low-light scene');
-  if (f.brownRatio > 0.45) cues.push('mud or sludge tones');
   const detail = cues.length ? cues.slice(0, 3).join(', ') : 'the dominant colour and texture profile';
-  return `Detected ${categoryMeta(category).label.toLowerCase()} across ${angles} photo angle${angles > 1 ? 's' : ''} from ${detail}. Assessed severity: ${SEVERITY_LABELS[severity]}.`;
+  return `Detected ${meta.label.toLowerCase()} across ${angles} photo angle${angles > 1 ? 's' : ''} from ${detail}. Assessed severity: ${SEVERITY_LABELS[severity]}.`;
 }
 
 export async function analyseIssue(sources, description = '', context = {}) {
   const started = performance.now();
-  const vision = await analyseImages(sources);
+
+  const vision = await analyseImages(sources);                 // colour engine: severity cues + hashes
   const text = classifyText(description);
   const urgency = urgencyScore(description);
-  const fused = fuse(vision.ranked, text.ranked, text.strength);
+  const clip = await clipClassify(sources).catch(() => null);  // primary signal
+
+  const signals = [];
+  if (clip) {
+    signals.push({ ranked: clip.ranked, weight: 0.62 });
+    signals.push({ ranked: vision.ranked, weight: 0.10 });
+  } else {
+    signals.push({ ranked: vision.ranked, weight: 0.62 });
+  }
+  if (text.hasSignal) signals.push({ ranked: text.ranked, weight: clip ? 0.26 : 0.38 });
+
+  const fused = fuse(signals);
   const category = fused[0].category;
   const meta = categoryMeta(category);
 
   const margin = fused[0].score - (fused[1]?.score ?? 0);
   const textAgrees = text.hasSignal && text.ranked[0]?.category === category;
-  const confidence = Math.max(0.05, Math.min(0.99,
-    fused[0].score * 0.55 + margin * 1.2 + vision.agreement * 0.15 + (textAgrees ? 0.12 : 0)));
+  const clipAgrees = clip && clip.ranked[0]?.category === category;
+
+  let confidence = Math.max(0.05, Math.min(0.99,
+    fused[0].score * 0.55 + margin * 1.2 +
+    (clip ? clip.agreement : vision.agreement) * 0.15 +
+    (textAgrees ? 0.10 : 0) + (clipAgrees ? 0.15 : 0)));
+
+  const looksNonCivic = clip ? clip.nonCivic > 0.5 : false;
+  if (looksNonCivic) confidence *= 0.6;
+
   const severity = severityModel({ category, features: vision.features, urgency, duplicateCount: context.duplicateCount || 0 });
 
   return {
-    engine: 'CivicVision on-board engine (browser build)',
-    provider: 'onboard', model: 'civicvision-v1',
+    engine: clip ? 'CLIP zero-shot vision model + text NLP' : 'CivicVision colour engine (CLIP unavailable)',
+    provider: clip ? 'clip-local' : 'onboard',
+    model: clip?.model || 'civicvision-v1',
     category, categoryLabel: meta.label, icon: meta.icon,
     confidence: +confidence.toFixed(3),
     severity, severityLabel: SEVERITY_LABELS[severity],
     departmentId: meta.department, slaHours: meta.slaHours,
-    summary: narrate(category, vision.features, severity, vision.angles),
+    summary: narrate(category, vision.features, severity, vision.angles, clip),
     evidence: vision.ranked.find((r) => r.category === category)?.evidence || [],
+    visionModel: clip ? {
+      name: clip.model,
+      topMatches: clip.ranked.slice(0, 4).map((r) => ({ category: r.category, label: categoryMeta(r.category).label, probability: r.probability })),
+      civicScore: +(1 - clip.nonCivic).toFixed(3),
+      agreement: clip.agreement, ms: clip.ms
+    } : null,
     alternates: fused.slice(1, 4).map((f) => ({ category: f.category, label: categoryMeta(f.category).label, score: f.score })),
     textSignal: { matched: text.ranked[0]?.matched || [], agrees: textAgrees, strength: +text.strength.toFixed(2) },
     urgencyCues: urgency.cues,
-    angles: vision.angles, agreement: vision.agreement, features: vision.features,
-    hashes: vision.hashes,
-    needsHumanReview: confidence < CONFIG.confidenceThreshold,
+    angles: vision.angles, agreement: clip?.agreement ?? vision.agreement,
+    features: vision.features, hashes: vision.hashes,
+    looksNonCivic,
+    needsHumanReview: confidence < CONFIG.confidenceThreshold || looksNonCivic,
     processingMs: Math.round(performance.now() - started)
   };
 }
@@ -396,6 +437,7 @@ export async function verifyResolution({ beforeSources, afterSources, category }
   const diversity = angleDiversity(after.map((a) => a.hashes));
 
   const metrics = [];
+  let defectGone = null;
   const push = (label, b, a, betterWhen) => {
     const delta = a - b;
     const improved = betterWhen === 'lower' ? delta < -0.04 : delta > 0.04;
@@ -404,6 +446,20 @@ export async function verifyResolution({ beforeSources, afterSources, category }
   };
   let checks = 0, improvements = 0;
   const track = (ok) => { checks++; if (ok) improvements++; };
+
+  // strongest signal: has the defect stopped being recognisable to the model?
+  try {
+    const bs = (await Promise.all(beforeSources.slice(0, 2).map((x) => categoryScore(x, category)))).filter((n) => typeof n === 'number');
+    const as = (await Promise.all(afterSources.slice(0, 2).map((x) => categoryScore(x, category)))).filter((n) => typeof n === 'number');
+    if (bs.length && as.length) {
+      const b = bs.reduce((x, y) => x + y, 0) / bs.length;
+      const a = as.reduce((x, y) => x + y, 0) / as.length;
+      defectGone = { before: +b.toFixed(3), after: +a.toFixed(3), drop: +(b - a).toFixed(3) };
+      const improved = a < b * 0.6;
+      metrics.push({ label: `Vision model still sees "${categoryMeta(category).label}"`, before: defectGone.before, after: defectGone.after, delta: -defectGone.drop, improved });
+      track(improved); track(improved);
+    }
+  } catch { /* model unavailable */ }
 
   switch (category) {
     case 'POTHOLE': case 'MANHOLE': case 'FOOTPATH':
@@ -434,13 +490,14 @@ export async function verifyResolution({ beforeSources, afterSources, category }
   const notes = [];
   if (recycled) notes.push('REJECTED: an "after" photo is a near-duplicate of the original evidence (recycled evidence).');
   if (!diversity.ok) notes.push(`WARNING: ${diversity.note}`);
+  if (defectGone && defectGone.after >= defectGone.before * 0.6) notes.push('The vision model still recognises the original defect in the "after" photos.');
   if (improvementScore === 0) notes.push('No measurable visual improvement detected between before and after evidence.');
   if (improvementScore >= 0.5 && !recycled) notes.push('Measurable visual improvement confirmed by CivicVision.');
 
   return {
     verified: !recycled && improvementScore >= 0.5,
     recycledEvidence: recycled, crossDistance: minCross,
-    improvementScore: +improvementScore.toFixed(2), angleDiversity: diversity, metrics, notes,
+    improvementScore: +improvementScore.toFixed(2), defectGone, angleDiversity: diversity, metrics, notes,
     afterHashes: after.map((a) => a.hashes)
   };
 }
@@ -548,6 +605,10 @@ export async function reportIssue({ sources, exifs = [], description = '', landm
   }
 
   const meta = categoryMeta(ai.category);
+
+  // AI address: read signage out of the photo, then geocode it against OSM
+  const addressAI = await resolveAddress({ sources, point, description, place }).catch(() => null);
+
   const liability = accountableFromRegistry({ point, ward: place.ward, category: ai.category });
 
   const issue = db.insert('issues', {
@@ -557,7 +618,8 @@ export async function reportIssue({ sources, exifs = [], description = '', landm
     severity: ai.severity, severityLabel: ai.severityLabel,
     departmentId: ai.departmentId, status: 'ROUTED',
     location: { ...point, trust },
-    address: place.address, ward: place.ward, wardName: place.wardName, geoSource: place.source,
+    address: addressAI?.formatted || place.address, addressAI,
+    ward: place.ward, wardName: place.wardName, geoSource: place.source,
     reportCount: 1, corroborators: [],
     slaHours: meta.slaHours, dueAt: new Date(Date.now() + meta.slaHours * 36e5).toISOString(),
     escalated: false, humanReview: ai.needsHumanReview, angleCheck: diversity,
@@ -573,13 +635,19 @@ export async function reportIssue({ sources, exifs = [], description = '', landm
 
   audit(issue.id, user, 'REPORTED', { category: ai.category, confidence: ai.confidence, photos: sources.length });
   audit(issue.id, null, 'AI_ROUTED', { department: db.byId('departments', ai.departmentId)?.name, engine: ai.engine, confidence: ai.confidence });
+  if (addressAI) {
+    audit(issue.id, null, 'ADDRESS_RESOLVED', {
+      address: addressAI.formatted, confidence: addressAI.confidence,
+      signals: addressAI.signals, ocrLines: addressAI.ocr.lines.length
+    });
+  }
 
   const dept = db.byId('departments', ai.departmentId);
   raiseAlert({
     issueId: issue.id, departmentId: ai.departmentId,
     level: ai.severity >= 4 ? 'critical' : ai.severity >= 3 ? 'warning' : 'info',
     title: `New ${ai.categoryLabel} - ${ai.severityLabel}`,
-    message: `${issue.code} auto-routed to ${dept?.name} by CivicVision (confidence ${(ai.confidence * 100).toFixed(0)}%). ${ai.summary} Location: ${issue.wardName}. SLA ${meta.slaHours}h.`,
+    message: `${issue.code} auto-routed to ${dept?.name} by CivicVision (confidence ${(ai.confidence * 100).toFixed(0)}%). ${ai.summary} Address: ${issue.address}. SLA ${meta.slaHours}h.`,
     meta: { category: ai.category, severity: ai.severity }
   });
   notifyUser(user.id, { issueId: issue.id, title: `${issue.code} routed to ${dept?.name}`, message: `Target resolution within ${meta.slaHours} hours.` });
@@ -839,6 +907,7 @@ export function overview() {
       avgResolutionHours: durations.length ? +(durations.reduce((a, b) => a + b, 0) / durations.length).toFixed(1) : null
     },
     ai: {
+      model: modelState(),
       categories: Object.keys(CATEGORIES).length,
       avgConfidence: confs.length ? +(confs.reduce((a, b) => a + b, 0) / confs.length).toFixed(3) : null,
       humanReviewQueue: issues.filter((i) => i.humanReview && i.status !== 'CLOSED').length,

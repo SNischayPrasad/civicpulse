@@ -11,6 +11,7 @@ import { categoryMeta, SEVERITY_LABELS } from '../services/ai/taxonomy.js';
 import { readExif } from '../services/exif.js';
 import { reverseGeocode, findNearby, haversine } from '../services/geo.js';
 import { findAccountable, accountableFromRegistry } from '../services/contractors.js';
+import { resolveAddress } from '../services/ai/address.js';
 import notify from '../services/notify.js';
 
 const router = express.Router();
@@ -168,6 +169,12 @@ router.post('/', requireAuth, upload.array('photos', config.policy.maxPhotos), a
       });
     }
 
+    // ---- AI address resolution ---------------------------------------------
+    // Reads signboards, house numbers and street names out of the photo itself
+    // and geocodes them against OpenStreetMap, biased to the GPS fix.
+    const addressAI = await resolveAddress({ buffers, point: location, description, place })
+      .catch(() => null);
+
     // ---- contractor accountability from the open-contracts registry --------
     // Runs synchronously (no network) so the citizen sees responsibility
     // assigned in the same response. OSM enrichment follows asynchronously.
@@ -190,7 +197,8 @@ router.post('/', requireAuth, upload.array('photos', config.policy.maxPhotos), a
       departmentId: ai.departmentId,
       status: 'ROUTED',
       location: { ...location, trust: locationTrust },
-      address: place?.address || null,
+      address: addressAI?.formatted || place?.address || null,
+      addressAI,
       ward: place?.ward || null,
       wardName: place?.wardName || null,
       city: place?.city || null,
@@ -228,6 +236,15 @@ router.post('/', requireAuth, upload.array('photos', config.policy.maxPhotos), a
       department: db.departments.byId(ai.departmentId)?.name,
       engine: ai.engine, confidence: ai.confidence, slaHours: meta.slaHours
     });
+    if (addressAI) {
+      notify.audit(issue.id, null, 'ADDRESS_RESOLVED', {
+        address: addressAI.formatted,
+        confidence: addressAI.confidence,
+        signals: addressAI.signals,
+        ocrLines: addressAI.ocr.lines.length,
+        snapped: addressAI.snapped
+      });
+    }
 
     const dept = db.departments.byId(ai.departmentId);
     notify.raiseAlert({
@@ -235,7 +252,7 @@ router.post('/', requireAuth, upload.array('photos', config.policy.maxPhotos), a
       departmentId: ai.departmentId,
       level: ai.severity >= 4 ? 'critical' : ai.severity >= 3 ? 'warning' : 'info',
       title: `New ${ai.categoryLabel} - ${SEVERITY_LABELS[ai.severity]}`,
-      message: `${issue.code} auto-routed to ${dept?.name} by ${ai.engine} (confidence ${(ai.confidence * 100).toFixed(0)}%). ${ai.summary} Location: ${issue.wardName || issue.address}. SLA ${meta.slaHours}h.`,
+      message: `${issue.code} auto-routed to ${dept?.name} by ${ai.engine} (confidence ${(ai.confidence * 100).toFixed(0)}%). ${ai.summary} Address: ${issue.address || issue.wardName}. SLA ${meta.slaHours}h.`,
       meta: { category: ai.category, severity: ai.severity, confidence: ai.confidence, ward: issue.ward, needsHumanReview: ai.needsHumanReview }
     });
     notify.notifyUser(req.user.id, {
@@ -429,7 +446,7 @@ router.post('/:id/before', requireAuth, requireStaff, upload.array('photos', con
 });
 
 /** Worker closes the job with "after" evidence - AI verifies it is genuine. */
-router.post('/:id/resolve', requireAuth, requireStaff, upload.array('photos', config.policy.maxPhotos), (req, res) => {
+router.post('/:id/resolve', requireAuth, requireStaff, upload.array('photos', config.policy.maxPhotos), async (req, res) => {
   const issue = db.issues.byId(req.params.id);
   if (!issue) return res.status(404).json({ error: 'Issue not found.' });
   if (!canTouch(req.user, issue)) return res.status(403).json({ error: 'Not your department.' });
@@ -450,7 +467,7 @@ router.post('/:id/resolve', requireAuth, requireStaff, upload.array('photos', co
       .filter((p) => fs.existsSync(p))
       .map((p) => fs.readFileSync(p));
 
-    const verification = verifyResolution({
+    const verification = await verifyResolution({
       beforeBuffers,
       afterBuffers: files.map((f) => f.buffer),
       category: issue.category

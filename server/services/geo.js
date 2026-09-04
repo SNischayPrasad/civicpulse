@@ -66,6 +66,7 @@ export async function reverseGeocode(point) {
       city: a.city || a.town || a.village || a.state_district || null,
       state: a.state || null,
       postcode: a.postcode || null,
+      addressDetail: a,
       source: 'nominatim'
     };
     cache.set(k, out);

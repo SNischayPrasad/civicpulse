@@ -33,7 +33,12 @@ npm install
 npm start
 ```
 
-Open <http://localhost:4000>. First boot seeds 8 departments, 6 contractors and 9 demo accounts.
+Open <http://localhost:4000>. First boot seeds 8 departments, 6 contractors and 9 demo accounts, and
+downloads the CLIP vision model (~50 MB) and the Tesseract OCR data (~15 MB) once — both are cached
+afterwards and everything then runs offline. No API key is needed.
+
+On the GitHub Pages build the same models download into the browser the first time you submit a
+report, and are cached by the browser after that.
 
 ### Demo accounts
 
@@ -51,12 +56,13 @@ Sign in as the citizen in one tab and the worker in another — alerts move betw
 ## The pipeline
 
 ```
- photo(s) + GPS ──► CivicVision ──► NLP ──► fusion ──► severity ──► department
-                     (vision)      (text)                             │
-                                                                      ▼
- citizen verifies ◄── AI closure check ◄── before/after ◄── SLA clock + escalation
-                                                │
-                                     contractor liability (open data)
+ photo(s) ──► CLIP vision model ──► NLP ──► fusion ──► severity ──► department
+     │              (zero-shot)      (text)                            │
+     └──► OCR + EXIF GPS ──► street address (OpenStreetMap)            ▼
+                                                                 SLA clock
+ citizen verifies ◄── AI closure check ◄── before/after ◄── + escalation
+                                            │
+                                 contractor liability (open data)
 ```
 
 ### 1 · Authentication gates everything
@@ -68,31 +74,65 @@ a token; department staff can only touch issues routed to their own department.
 photos are **genuinely different viewpoints** rather than the same frame uploaded twice.
 
 ### 3 · The AI layer
-`server/services/ai/` — three independent signals fused into one auditable verdict:
+`server/services/ai/` — independent signals fused into one auditable verdict:
 
-- **CivicVision (on-board)** — decodes each photo, resamples to a 96×96 lattice and extracts 18
-  normalised scene descriptors (asphalt ratio, dark-cavity blob area and circularity, hue entropy /
-  texture chaos, specular ratio, vertical pole structure, night ratio, colour variance …), then scores
-  them against a weighted visual signature per category and softmaxes the result. Runs offline, in
-  ~100–200 ms, and always available.
-- **Hosted vision model (optional)** — point `AI_PROVIDER` / `AI_BASE_URL` / `AI_MODEL` at any
-  Anthropic, OpenAI-compatible or Gemini vision endpoint and it becomes the primary classifier, with
-  CivicVision as the cross-check and automatic fallback.
-- **Text NLP** — keyword and phrase matching over the citizen's description, plus hazard-cue
-  detection ("child", "accident", "live wire", "two months") that feeds the severity model.
+- **CLIP zero-shot vision (primary).** A real trained vision-language model
+  (`Xenova/clip-vit-base-patch32`) runs locally through Transformers.js + ONNX —
+  no API key, no per-request cost, no training data. Each photo is scored against
+  a bank of natural-language prompts per civic category (`prompts.js`), and the
+  prompt scores are summed per category. A `_NONE` distractor bucket ("a portrait
+  of a person", "a clean empty road") means a non-civic photo is flagged for human
+  review instead of being forced into some category.
+- **Text NLP.** Keyword and phrase matching over the citizen's description, plus
+  hazard-cue detection ("child", "accident", "live wire", "two months") that feeds
+  the severity model.
+- **CivicVision colour/texture engine.** 18 normalised scene descriptors (asphalt
+  ratio, dark-cavity blob area and circularity, hue entropy, specular ratio,
+  vertical pole structure…). It supplies severity cues and the perceptual hashes,
+  and takes over classification entirely if the model cannot be loaded.
+- **Hosted vision model (optional).** Point `AI_PROVIDER` / `AI_BASE_URL` /
+  `AI_MODEL` at any Anthropic, OpenAI-compatible or Gemini vision endpoint and it
+  joins the fusion as an additional signal.
 
-Every verdict carries **why**: the specific visual features that drove it, the text signals that
-agreed, the alternates considered, and a confidence. Below `AI_CONFIDENCE_THRESHOLD` the issue is
-flagged for **human review** instead of being silently auto-routed.
+**Measured accuracy** on 33 real photographs from Wikimedia Commons:
 
-12 categories → 8 departments, each with its own SLA (manhole 6 h, water leak 8 h, sewage 12 h,
-garbage 24 h, pothole 48 h …).
+| Engine | Top-1 category | Potholes |
+|---|---|---|
+| Colour statistics alone (v1) | 24% | 0 / 8 |
+| CLIP zero-shot | 91% | 7 / 8 |
+| CLIP + text NLP (as shipped) | **100%** | **8 / 8** |
 
-### 4 · Location you can trust
-EXIF GPS is parsed straight out of the JPEG (no dependencies) and **outranks** the browser's own fix,
-because a photo carrying its own coordinates is far harder to fake. Each issue records its location
-trust level. Reverse geocoding to a ward name uses OpenStreetMap Nominatim, with a deterministic
-grid-cell fallback so routing never blocks when offline.
+Every verdict carries **why**: the prompt matches, the visual features, the text
+signals that agreed, the alternates considered, and a confidence. Below
+`AI_CONFIDENCE_THRESHOLD` the issue goes to **human review** rather than being
+silently auto-routed.
+
+12 categories → 8 departments, each with its own SLA (manhole 6 h, water leak 8 h,
+sewage 12 h, garbage 24 h, pothole 48 h …).
+
+### 4 · Location, and an address read out of the photo
+GPS alone gives a dot, not an address. `services/ai/address.js` combines four
+signals and records which one produced each part of the result:
+
+1. **EXIF GPS** parsed straight out of the JPEG (no dependencies). It **outranks**
+   the browser's own fix, because a photo carrying its own coordinates is far
+   harder to fake.
+2. **Device GPS** from the browser.
+3. **OCR over the photograph** (Tesseract). Street name boards, shop names, house
+   numbers and PIN codes physically present at the site are read out of the image.
+   Scene text is small and low-contrast, so photos are greyscaled, contrast-stretched
+   between the 5th and 95th percentile and upscaled first; split sign lines are
+   rejoined and common OCR damage is repaired (`ROY` → `ROAD`).
+4. **The citizen's description** — landmarks they typed.
+
+The extracted text is then geocoded against **OpenStreetMap Nominatim**, bounded to
+a box around the GPS fix, turning `12.9352, 77.6245` into
+`Mahayogi Vemana Road, Koramangala East, Bengaluru, Karnataka 560095` — and when a
+signboard is legible, snapping the pin to the actual premises.
+
+A road name physically painted on a sign beats the road the geocoder guessed from a
+GPS dot that may be 200 m off. When nothing is legible the platform says so plainly
+rather than claiming the photo contributed.
 
 ### 5 · Crowd intelligence
 A new report within 70 m of an open issue of the same category **merges into that cluster** instead of
@@ -117,6 +157,9 @@ Workers upload **before** and **after** photos, minimum two angles each. CivicVi
 
 - rejects **recycled evidence** — an "after" photo perceptually near-identical to a "before" one is a
   fake closure and is blocked outright;
+- re-runs **the vision model on the "after" photos** and checks the defect is no longer
+  recognisable — on a genuine pothole repair the model's pothole score falls from `0.96` to
+  `0.15`, and a closure where it stays high is flagged;
 - measures **category-aware improvement** (dark cavity area for potholes, clutter and colour
   dispersion for garbage, standing water for sewage, illumination for street lights …) and reports a
   score with per-metric before/after numbers;
@@ -131,19 +174,31 @@ closure rejection, human override — lands in an immutable audit trail.
 
 ## Verification
 
-The backend ships with an end-to-end suite that drives the real HTTP API with synthetically generated
-imagery (pothole, garbage, night-time street light, repaired road):
+Three suites, all driving the real HTTP API with **real photographs** (fetch them
+with `npm run fixtures`, then start the server and run):
+
+```bash
+npm run fixtures     # download the Wikimedia Commons test photos
+npm test             # 50 end-to-end checks
+npm run test:vision  # classification accuracy across 33 real photos
+npm run test:address # address resolution from street signage
+```
 
 ```
-43 passed, 0 failed
+npm test             -> 50 passed, 0 failed
+npm run test:vision  -> Category accuracy 33/33 (100%) · Department routing 29/29 (100%)
 ```
 
-It covers auth and role isolation, classification and routing per category, input guards, duplicate
-clustering, the full workflow, angle-diversity enforcement, fake-closure rejection, citizen
-verification, contractor liability and analytics. The browser build has an equivalent in-page suite
-(24 checks) exercising the same logic through the static engine.
+The end-to-end suite walks a real pothole photo from a citizen's camera to a
+verified closure: auth and role isolation, classification and routing, AI address
+resolution, input guards, duplicate clustering, the department workflow,
+angle-diversity enforcement, fake-closure rejection, citizen sign-off, contractor
+liability and analytics. The closure check is the interesting one — the vision
+model's pothole score on the evidence drops from `0.96` to `0.15` once the road is
+repaired, which is what "verified" actually means here.
 
----
+The browser build has an equivalent in-page suite exercising the same logic through
+the static engine.
 
 ## Architecture
 
@@ -155,9 +210,13 @@ server/
   middleware/auth.js       JWT, roles, department scoping
   routes/                  auth · issues · departments · contractors · analytics
   services/
+    ai/clip.js             CLIP zero-shot vision model (primary classifier)
+    ai/prompts.js          natural-language prompt bank + _NONE distractors
     ai/taxonomy.js         12 categories → department, SLA, keywords, visual signature
-    ai/heuristic.js        CivicVision: descriptors, classifier, perceptual hashes
+    ai/heuristic.js        CivicVision: descriptors, fallback classifier, perceptual hashes
     ai/nlp.js              text classification + hazard cues
+    ai/address.js          OCR signage reading + address geocoding
+    ai/address-core.js     address parsing rules (shared with the browser build)
     ai/remote.js           Anthropic / OpenAI-compatible / Gemini connector
     ai/index.js            fusion, severity, closure verification
     exif.js                dependency-free EXIF GPS reader
@@ -165,11 +224,13 @@ server/
     contractors.js         open-contracts registry + Overpass lookup
     notify.js              real-time alert bus, notifications, audit
 public/                    citizen app · department console · control room
-docs/                      the GitHub Pages build (same taxonomy + NLP, canvas vision)
+scripts/                   test-fixture downloader
+docs/                      the GitHub Pages build - same model, prompts, taxonomy,
+                           NLP and address rules, running fully in the browser
 ```
 
-**Stack:** Node.js · Express · Socket.IO · JWT · Multer · vanilla ES-module frontend · Leaflet ·
-OpenStreetMap. The datastore is a JSON document store with a Mongo-shaped API so it runs with
+**Stack:** Node.js · Express · Socket.IO · JWT · Multer · Transformers.js (CLIP) · Tesseract.js ·
+vanilla ES-module frontend · Leaflet · OpenStreetMap. The datastore is a JSON document store with a Mongo-shaped API so it runs with
 `npm install` alone — swapping in MongoDB is a drop-in change to `server/db.js`.
 
 ## Configuration
@@ -178,8 +239,8 @@ Copy `.env.example` to `.env`. Everything has a working default; the interesting
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `AI_PROVIDER` | `auto` | `auto` · `local` · `anthropic` · `openai` · `gemini` |
-| `AI_API_KEY` / `AI_BASE_URL` / `AI_MODEL` | — | hosted vision model; unset ⇒ on-board CivicVision |
+| `AI_PROVIDER` | `auto` | optional hosted model: `auto` · `local` · `anthropic` · `openai` · `gemini` |
+| `AI_API_KEY` / `AI_BASE_URL` / `AI_MODEL` | — | only for a hosted model. **Not required** — CLIP runs locally |
 | `AI_CONFIDENCE_THRESHOLD` | `0.55` | below this, an issue goes to human review |
 | `DUPLICATE_RADIUS_M` | `70` | crowd-cluster merge radius |
 | `MAX_PHOTOS` | `4` | photos per issue |
